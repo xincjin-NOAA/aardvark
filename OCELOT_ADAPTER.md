@@ -71,10 +71,31 @@ python test_ocelot_pipeline.py
 
 ## Running real training
 
+Interactively (e.g. on an interactive GPU allocation):
 ```
 python train_ocelot.py \
     --data_path /scratch5/purged/Xin.C.Jin/data/v1/diag_urma/ \
     --start_date 2025-02-01 --end_date 2025-02-20 \
     --val_start_date 2025-02-21 --val_end_date 2025-02-28 \
     --device cuda
+```
+
+Or submit as a SLURM job with `training/train_ocelot.sh` (mirrors ocelot3's own
+`submit_experiments_from_config.sh` job-script style, since this runs on the
+same cluster). It needs `AARDVARK_CONDA_ENV` set to however you activate
+Aardvark's conda env (`environment.yml` calls it `npw`) -- deliberately left
+unset in the script rather than guessed, since it must NOT be ocelot3's own
+`env_diatom.sh` (different Python version -- see `ocelot_vendor/__init__.py`
+for why that distinction matters here specifically). Also verify the
+`-A`/`-p`/`-q`/`--gres` SBATCH directives (copied from ocelot3's job scripts)
+are actually valid for aardvark work under your allocation before relying on
+them.
+
+```
+mkdir -p jobs   # once, if it doesn't exist -- sbatch needs -o/-e dirs to pre-exist
+sbatch --export=ALL,AARDVARK_CONDA_ENV=npw training/train_ocelot.sh
+
+# override any config var at submit time, e.g. a quick smoke run:
+sbatch --export=ALL,AARDVARK_CONDA_ENV=npw,START_DATE=2025-02-01,END_DATE=2025-02-03,EPOCHS=1 \
+    training/train_ocelot.sh
 ```
