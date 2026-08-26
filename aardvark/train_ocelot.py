@@ -1,12 +1,12 @@
 """
 Standalone training entrypoint: Aardvark's ConvCNP+ViT architecture (via
-ocelot_models.py) trained on ocelot3's real URMA DA data (via ocelot_loader.py),
-independent of both Aardvark's own (non-functional) loader.py and ocelot3's
-PyG/mesh training stack.
+ocelot_models.py) trained on ocelot3's real URMA DA data (via ocelot_loader.py,
+using the vendored data pipeline in ocelot_vendor/ -- no ocelot3 checkout or
+matching Python version needed), independent of both Aardvark's own
+(non-functional) loader.py and ocelot3's PyG/mesh training stack.
 
 Example:
     python train_ocelot.py \
-        --ocelot_repo_path /c/Users/xjin2/my_home/git/ocelot3 \
         --data_path /scratch5/purged/Xin.C.Jin/data/v1/diag_urma/ \
         --start_date 2025-02-01 --end_date 2025-02-20 \
         --val_start_date 2025-02-21 --val_end_date 2025-02-28 \
@@ -41,7 +41,6 @@ DEFAULT_STATIC_DATA_DIR = "/scratch3/NCEPDEV/da/Xin.C.Jin/my_data/urma"
 
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--ocelot_repo_path", required=True, help="Path to the ocelot3 repo (added to sys.path).")
     p.add_argument("--data_path", required=True, help="ocelot3 URMA Parquet data_path (per-instrument obs).")
     p.add_argument("--static_data_dir", default=DEFAULT_STATIC_DATA_DIR)
     p.add_argument("--start_date", required=True)
@@ -104,7 +103,6 @@ def reconstruct_analysis(y_hat, task, dataset: OcelotWeatherDataset):
 
 def build_dataset(args, start_date, end_date):
     return OcelotWeatherDataset(
-        ocelot_repo_path=args.ocelot_repo_path,
         data_path=args.data_path,
         static_data_dir=args.static_data_dir,
         start_date=start_date,

@@ -5,10 +5,12 @@ encoder/decoder (see ocelot_models.py) can run standalone against real URMA data
 instead of Aardvark's own loader.py, whose data_dir is a placeholder path
 ("path_to_data/") that was never wired up to a real dataset.
 
-Reuses ocelot3's raw loading/QC/normalization code as-is (ParquetDataManager,
-extract_features_from_df via load_observation_config) rather than reimplementing
-it. Requires the ocelot3 repo to be importable -- pass its path via
-`ocelot_repo_path` and it is added to sys.path on construction.
+Reuses ocelot3's raw loading/QC/normalization code (ParquetDataManager,
+extract_features_from_df via load_observation_config) via the vendored copy in
+ocelot_vendor/ (see ocelot_vendor/__init__.py for what was vendored and why --
+short version: Aardvark's own conda env is Python 3.8, and ocelot3's real
+dataset_timeseries.py uses Python 3.10+ syntax, so this adapter carries its own
+fixed copy instead of depending on a live, version-matched ocelot3 checkout).
 
 Design notes (why this isn't a 1:1 port of Aardvark's loader.py):
   - ocelot3 has no dense-grid loading step; every instrument, including the URMA
@@ -30,17 +32,11 @@ Design notes (why this isn't a 1:1 port of Aardvark's loader.py):
     called in a loop) instead of raising target_sample_size to "all".
 """
 import os
-import sys
 from typing import Dict, List, Optional
 
 import numpy as np
 import torch
 from torch.utils.data import Dataset
-
-
-def add_ocelot_to_path(ocelot_repo_path: str) -> None:
-    if ocelot_repo_path and ocelot_repo_path not in sys.path:
-        sys.path.insert(0, ocelot_repo_path)
 
 
 class OcelotWeatherDataset(Dataset):
@@ -66,7 +62,6 @@ class OcelotWeatherDataset(Dataset):
 
     def __init__(
         self,
-        ocelot_repo_path: str,
         data_path: str,
         static_data_dir: str,
         start_date: str,
@@ -79,9 +74,8 @@ class OcelotWeatherDataset(Dataset):
         target_sample_size: Optional[int] = 20000,
         seed: int = 0,
     ):
-        add_ocelot_to_path(ocelot_repo_path)
-        from ocelot.observation_config import load_observation_config
-        from ocelot.training.data.dataset_timeseries import (
+        from ocelot_vendor.observation_config import load_observation_config
+        from ocelot_vendor.dataset_timeseries import (
             ParquetDataManager,
             generate_binned_timestamp_list,
         )

@@ -11,12 +11,9 @@ This does NOT validate against real URMA data or real model behavior/accuracy
 convDeepSet/ViT wiring) doesn't crash and produces sane shapes. Run this before
 pointing train_ocelot.py at real data.
 
-IMPORTANT: written without a local Python/torch environment available to
-execute it (this machine has no Python on PATH) -- run it yourself in the
-conda env that has torch/timm/pandas/pyarrow/scikit-learn plus the ocelot3
-repo importable, e.g.:
-    python test_ocelot_pipeline.py --ocelot_repo_path /path/to/ocelot3
-before trusting any of this against real data.
+Run this in the conda env that has torch/timm/pandas/pyarrow/scikit-learn
+(ocelot3 itself is no longer needed -- see ocelot_vendor/):
+    python test_ocelot_pipeline.py
 """
 import argparse
 import os
@@ -27,7 +24,7 @@ import numpy as np
 import pandas as pd
 import torch
 
-from ocelot_loader import OcelotWeatherDataset, collate_single, add_ocelot_to_path
+from ocelot_loader import OcelotWeatherDataset, collate_single
 from ocelot_models import OcelotAardvarkModel, masked_mse_loss
 
 BIN_DATE = "2025-02-08"
@@ -92,9 +89,8 @@ def _write_partition(data_dir, file_base, year, date_part, cycle, df):
     df.to_parquet(os.path.join(part_dir, "part-0.parquet"))
 
 
-def build_synthetic_dataset(tmp_dir, ocelot_repo_path, seed=0):
-    add_ocelot_to_path(ocelot_repo_path)
-    from ocelot.observation_config import load_observation_config
+def build_synthetic_dataset(tmp_dir, seed=0):
+    from ocelot_vendor.observation_config import load_observation_config
 
     obs_config, feature_stats, fill_values, _, increment_stats = load_observation_config(
         exp_type="regional_da", config_name="urma"
@@ -137,16 +133,14 @@ def build_synthetic_dataset(tmp_dir, ocelot_repo_path, seed=0):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--ocelot_repo_path", required=True)
     p.add_argument("--device", default="cpu")
     args = p.parse_args()
 
     tmp_dir = tempfile.mkdtemp(prefix="ocelot_aardvark_smoke_")
     try:
-        static_dir = build_synthetic_dataset(tmp_dir, args.ocelot_repo_path)
+        static_dir = build_synthetic_dataset(tmp_dir)
 
         dataset = OcelotWeatherDataset(
-            ocelot_repo_path=args.ocelot_repo_path,
             data_path=tmp_dir,
             static_data_dir=static_dir,
             start_date=BIN_DATE,

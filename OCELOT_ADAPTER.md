@@ -1,12 +1,18 @@
 # ocelot3 data adapter
 
 Lets Aardvark's ConvCNP+ViT architecture run standalone, trained on real URMA
-DA data read directly from ocelot3's Parquet pipeline, instead of Aardvark's
-own `loader.py` (which points at placeholder paths and was never runnable).
+DA data, instead of Aardvark's own `loader.py` (which points at placeholder
+paths and was never runnable). No ocelot3 checkout is needed at run time --
+the pieces of ocelot3's data pipeline this depends on are vendored in.
 
 New files, all under `aardvark/`:
-- `ocelot_loader.py` -- `OcelotWeatherDataset`, reusing ocelot3's
-  `ParquetDataManager`/`extract_features_from_df`/`obs_config_urma.py` as-is.
+- `ocelot_vendor/` -- vendored copy of ocelot3's `ParquetDataManager`/
+  `extract_features_from_df`/`obs_config_urma.py` and their small dependencies
+  (see `ocelot_vendor/__init__.py` for exactly what was copied and the two
+  deliberate deviations from the original: a `from __future__ import
+  annotations` fix for a Python-3.10-only `int | None` annotation that crashes
+  on Aardvark's Python-3.8 conda env, and two confirmed-dead imports dropped).
+- `ocelot_loader.py` -- `OcelotWeatherDataset`, built on the vendored pipeline.
 - `ocelot_models.py` -- `OcelotAardvarkModel` (encoder -> ViT processor ->
   OnToOff decoder), reusing Aardvark's `convDeepSet` and `ViT` unmodified but
   driven by ocelot3's config-driven instrument list instead of Aardvark's
@@ -27,13 +33,21 @@ back down to arbitrary query points -- ocelot3's analysis-grid cells -- via
 HadISD stations. The training target is ocelot3's DA increment
 (`anal_norm - ges_norm`), matching what ocelot3's own model predicts.
 
+## Keeping the vendored copy in sync
+
+`ocelot_vendor/` is a manual snapshot, not a live link -- if ocelot3's real
+QC ranges, normalization stats, `obs_config_urma.py` instrument list, or
+`ParquetDataManager`/`extract_features_from_df` logic change, re-copy the
+affected file(s) by hand and reapply the two deviations noted in
+`ocelot_vendor/__init__.py`. There's no automation checking these have drifted.
+
 ## Known limitations (read before trusting results)
 
-- **Not executed.** Written and reasoned through by hand against both
-  codebases -- no Python/torch was available on the machine this was written
-  on. Run `test_ocelot_pipeline.py` in your real conda env (the one with
-  torch/timm/pandas/pyarrow/scikit-learn plus `ocelot3` importable) before
-  trusting anything else here.
+- **Not executed by the model that wrote it.** The first real run (on the
+  actual HPC env) caught two bugs static reading missed: a wrong
+  `--ocelot_repo_path` (now moot -- see above) and the Python-3.8/3.10 syntax
+  mismatch fixed by vendoring. Rerun `test_ocelot_pipeline.py` after any
+  further change before trusting it.
 - **Batch size is fixed at 1 bin/step.** Each instrument has a different N per
   bin; `convDeepSet`'s `OffToOn` path takes N as a plain tensor dim with no
   cross-sample padding. Use `--grad_accum_steps` for an effective larger batch.
@@ -52,14 +66,13 @@ HadISD stations. The training target is ocelot3's DA increment
 ## Running the smoke test
 
 ```
-python test_ocelot_pipeline.py --ocelot_repo_path /path/to/ocelot3
+python test_ocelot_pipeline.py
 ```
 
 ## Running real training
 
 ```
 python train_ocelot.py \
-    --ocelot_repo_path /path/to/ocelot3 \
     --data_path /scratch5/purged/Xin.C.Jin/data/v1/diag_urma/ \
     --start_date 2025-02-01 --end_date 2025-02-20 \
     --val_start_date 2025-02-21 --val_end_date 2025-02-28 \
