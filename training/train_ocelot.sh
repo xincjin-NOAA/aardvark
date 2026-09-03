@@ -37,7 +37,7 @@ set -e
 
 source /home/Xin.C.Jin/modules/env_aardvark.sh 
 
-cd "$(dirname "$0")/../aardvark"
+cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}/aardvark"
 
 echo "=========================================="
 echo "Running on $(hostname)"
