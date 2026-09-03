@@ -75,8 +75,10 @@ def parse_args():
     p.add_argument("--num_workers", type=int, default=0)
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     p.add_argument("--checkpoint_dir", default="./ocelot_checkpoints")
-    p.add_argument("--save_val_outputs", action="store_true",
-                    help="Dump y_hat/y_target/valid_mask per val bin to <checkpoint_dir>/val_outputs/epoch_<N>/.")
+    p.add_argument("--save_val_outputs", dest="save_val_outputs", action="store_true", default=True,
+                    help="Dump y_hat/y_target/valid_mask per val bin to <checkpoint_dir>/val_outputs/epoch_<N>/. "
+                         "On by default; pass --no_save_val_outputs to disable.")
+    p.add_argument("--no_save_val_outputs", dest="save_val_outputs", action="store_false")
     p.add_argument("--log_every", type=int, default=20)
     p.add_argument("--seed", type=int, default=0)
     return p.parse_args()

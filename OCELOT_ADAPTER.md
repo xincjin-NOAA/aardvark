@@ -116,8 +116,10 @@ directory. Always `sbatch` from the aardvark repo root.
 `evaluate()` in `train_ocelot.py` prints the loss for every validation bin
 (`val bin <bin_name> loss <loss>`), not just the epoch-averaged val loss.
 
-Pass `--save_val_outputs` to also dump each validation bin's raw tensors to
-`<checkpoint_dir>/val_outputs/epoch_<N>/<bin_name>.pt`:
+Each validation bin's raw tensors are also dumped to
+`<checkpoint_dir>/val_outputs/epoch_<N>/<bin_name>.pt` by default (pass
+`--no_save_val_outputs` to disable -- one `.pt` file per val bin per epoch, so
+disk use grows with epochs x val-set size):
 
 ```python
 import torch
