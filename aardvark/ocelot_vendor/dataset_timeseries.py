@@ -21,6 +21,11 @@ byte-for-byte identical:
     with the bin's own hour as the literal cycle string; the flat fallback never
     matches anything on disk and the multi-cycle window search could miss valid
     partitions for bin hours outside the original 00/06/12/18 NWP cycle list.
+  - `generate_binned_timestamp_list`'s bin name format changed from
+    `day_half=YYYY-MM-DD_HH` to `date=YYYY-MM-DD_cycle=HH`, matching the real
+    Parquet partition naming end to end (this is also the identifier threaded
+    through `OcelotWeatherDataset`/`train_ocelot.py` as `bin_name`, e.g. in
+    logging and saved validation outputs).
 """
 from __future__ import annotations
 
@@ -520,11 +525,12 @@ def generate_binned_timestamp_list(start_mmdd, end_mmdd, year=2024, delta_time: 
         delta_time (int): Interval in hours between timestamps (e.g. 1, 6, or 12).
 
     Returns:
-        List[str]: A list of bin name strings in 'day_half=YYYY-MM-DD_HH' format.
+        List[str]: A list of bin name strings in 'date=YYYY-MM-DD_cycle=HH' format
+            (matches the real Parquet partition naming -- see ParquetDataManager).
     """
     timestamps = generate_timestamps(start_mmdd, end_mmdd, year, delta_time)
     ts_series = pd.to_datetime(timestamps)
-    return ts_series.strftime("day_half=%Y-%m-%d_%H").tolist()
+    return ts_series.strftime("date=%Y-%m-%d_cycle=%H").tolist()
 
 
 class ParquetDataManager:
@@ -559,12 +565,11 @@ class ParquetDataManager:
             data_summary_bin[obs_type] = {}
             for inst_name in self.observation_config[obs_type].keys():
                 file_base = self.observation_config[obs_type][inst_name].get('zarr_name', inst_name)
-                # Extract date and cycle from bin_name (format: day_half=YYYY-MM-DD_HH).
-                # Real data is Hive-partitioned as <file_base>_<year>.parquet/date=<YYYY-MM-DD>/cycle=<HH>,
-                # with the bin's own hour as the literal cycle string -- there is no separate
-                # flat "<file_base>.parquet/day_half=..." layout on disk.
-                bin_parts = bin_name.split('=')[1]  # Get YYYY-MM-DD_HH
-                date_part, cycle = bin_parts.rsplit('_', 1)  # Get YYYY-MM-DD, HH
+                # Extract date and cycle from bin_name (format: date=YYYY-MM-DD_cycle=HH,
+                # matching the real Hive-partitioned layout on disk:
+                # <file_base>_<year>.parquet/date=<YYYY-MM-DD>/cycle=<HH>).
+                date_part, cycle = bin_name.split('_cycle=')
+                date_part = date_part.split('=', 1)[1]
                 year = date_part.split('-')[0]
 
                 dataset_path = os.path.join(

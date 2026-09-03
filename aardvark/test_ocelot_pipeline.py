@@ -154,7 +154,7 @@ def main():
         # (delta_time=1); synthetic Parquet data was only written for BIN_HOUR,
         # so every other hourly bin is legitimately empty/None -- find the one
         # bin we actually populated rather than assuming index 0 or len==1.
-        target_bin_name = f"day_half={BIN_DATE}_{BIN_HOUR}"
+        target_bin_name = f"date={BIN_DATE}_cycle={BIN_HOUR}"
         assert target_bin_name in dataset.binned_samples, dataset.binned_samples
         idx = dataset.binned_samples.index(target_bin_name)
 

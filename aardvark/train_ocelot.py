@@ -125,7 +125,8 @@ def build_dataset(args, start_date, end_date):
 def evaluate(model, val_loader, device, save_dir=None):
     """Runs validation, printing per-bin loss. If save_dir is set, also dumps
     y_hat/y_target/valid_mask (normalized, same space as the loss) per bin to
-    "<save_dir>/<bin_name>.pt" for later inspection."""
+    "<save_dir>/date=<YYYY-MM-DD>_cycle=<HH>.pt" (same date=/cycle= naming as
+    the real Parquet partitions) for later inspection."""
     model.eval()
     total_loss, n_batches = 0.0, 0
     if save_dir is not None:
