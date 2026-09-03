@@ -17,14 +17,14 @@
 #SBATCH -p u1-h100
 #SBATCH -q gpu
 #SBATCH --gres=gpu:h100:1          # train_ocelot.py is single-process (batch size fixed
-#SBATCH -J aardvark_ocelot         # at 1 bin/step, see OCELOT_ADAPTER.md) -- 1 GPU, no DDP.
+#SBATCH -J aardvark_test         # at 1 bin/step, see OCELOT_ADAPTER.md) -- 1 GPU, no DDP.
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=0
-#SBATCH -t 02:00:00
-#SBATCH -o jobs/train_ocelot_%J.out
-#SBATCH -e jobs/train_ocelot_%J.err
+#SBATCH -t 00:30:00
+#SBATCH -o jobs/train_aardvark_%J.out
+#SBATCH -e jobs/train_aardvark_%J.err
 # -A/-p/-q/gres above are copied from ocelot3's submit_experiments_from_config.sh
 # (same cluster) -- verify this account/partition/QOS is actually valid for
 # aardvark work before relying on it; adjust -t (time limit) once you know how
@@ -34,18 +34,8 @@ set -x
 set -e
 
 # === Environment ===
-# IMPORTANT: this must activate AARDVARK's conda env (environment.yml calls it
-# "npw", Python 3.8+torch+timm), NOT ocelot3's env_diatom.sh -- that activates
-# ocelot3's own (Python 3.10+) env, and mixing the two up is exactly the
-# Python-version mismatch that ocelot_vendor/ was built to route around (see
-# ocelot_vendor/__init__.py). Fill in however conda is activated on this
-# cluster for the aardvark/npw env, e.g.:
-#   module load conda
-#   conda activate npw
-# Left unset on purpose -- I don't know this cluster's conda init path.
-: "${AARDVARK_CONDA_ENV:?Set AARDVARK_CONDA_ENV (e.g. npw) or edit this script directly with your conda activation lines.}"
-module load conda 2>/dev/null || true
-conda activate "$AARDVARK_CONDA_ENV"
+
+source /home/Xin.C.Jin/modules/env_aardvark.sh 
 
 cd "$(dirname "$0")/../aardvark"
 
@@ -58,16 +48,16 @@ nvidia-smi
 python -c "import torch; print('CUDA available:', torch.cuda.is_available())"
 
 # === Config -- override any of these via --export=ALL,VAR=value at submit time ===
-DATA_PATH="${DATA_PATH:-/scratch5/purged/Xin.C.Jin/data/v1/diag_urma/}"
-STATIC_DATA_DIR="${STATIC_DATA_DIR:-/scratch3/NCEPDEV/da/Xin.C.Jin/my_data/urma}"
-START_DATE="${START_DATE:-2025-02-01}"
-END_DATE="${END_DATE:-2025-02-03}"       # small window by default -- widen once a short run works
+DATA_PATH="${DATA_PATH:-/scratch3/NCEPDEV/stmp/Xin.C.Jin/data/ocelot/data_v6/urma_ok/}"
+STATIC_DATA_DIR="${STATIC_DATA_DIR:-/scratch3/NCEPDEV/da/Xin.C.Jin/my_data/urma_ok}"
+START_DATE="${START_DATE:-2022-02-01}"
+END_DATE="${END_DATE:-2022-05-03}"       # small window by default -- widen once a short run works
 VAL_START_DATE="${VAL_START_DATE:-}"
 VAL_END_DATE="${VAL_END_DATE:-}"
 EPOCHS="${EPOCHS:-5}"
 GRAD_ACCUM_STEPS="${GRAD_ACCUM_STEPS:-8}"
 TARGET_SAMPLE_SIZE="${TARGET_SAMPLE_SIZE:-20000}"
-CHECKPOINT_DIR="${CHECKPOINT_DIR:-./ocelot_checkpoints}"
+CHECKPOINT_DIR="${CHECKPOINT_DIR:-./checkpoints}"
 
 VAL_ARGS=()
 if [ -n "$VAL_START_DATE" ] && [ -n "$VAL_END_DATE" ]; then
