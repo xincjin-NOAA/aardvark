@@ -8,10 +8,15 @@ the pieces of ocelot3's data pipeline this depends on are vendored in.
 New files, all under `aardvark/`:
 - `ocelot_vendor/` -- vendored copy of ocelot3's `ParquetDataManager`/
   `extract_features_from_df`/`obs_config_urma.py` and their small dependencies
-  (see `ocelot_vendor/__init__.py` for exactly what was copied and the two
-  deliberate deviations from the original: a `from __future__ import
-  annotations` fix for a Python-3.10-only `int | None` annotation that crashes
-  on Aardvark's Python-3.8 conda env, and two confirmed-dead imports dropped).
+  (see the module docstring at the top of `ocelot_vendor/dataset_timeseries.py`
+  for the exact list of deliberate deviations from the original -- a `from
+  __future__ import annotations` fix for a Python-3.10-only `int | None`
+  annotation that crashes on Aardvark's Python-3.8 conda env, two
+  confirmed-dead imports dropped, and `ParquetDataManager.get_data_for_bin`
+  simplified to always read the real Hive-partitioned layout,
+  `<file_base>_<year>.parquet/date=<YYYY-MM-DD>/cycle=<HH>` with the bin's own
+  hour as the literal cycle string, instead of the original's NWP-cycle-window
+  search plus a flat fallback layout that doesn't exist on disk here).
 - `ocelot_loader.py` -- `OcelotWeatherDataset`, built on the vendored pipeline.
 - `ocelot_models.py` -- `OcelotAardvarkModel` (encoder -> ViT processor ->
   OnToOff decoder), reusing Aardvark's `convDeepSet` and `ViT` unmodified but
@@ -99,3 +104,30 @@ sbatch --export=ALL,AARDVARK_CONDA_ENV=npw training/train_ocelot.sh
 sbatch --export=ALL,AARDVARK_CONDA_ENV=npw,START_DATE=2025-02-01,END_DATE=2025-02-03,EPOCHS=1 \
     training/train_ocelot.sh
 ```
+
+Note: the script `cd`s into the repo using `$SLURM_SUBMIT_DIR` (the directory
+`sbatch` was invoked from), not `dirname "$0"` -- Slurm runs a copy of the
+batch script from `/var/spool/slurmd/job<ID>/`, so a `dirname "$0"`-relative
+path resolves against that spool directory instead of your submission
+directory. Always `sbatch` from the aardvark repo root.
+
+## Inspecting validation predictions
+
+`evaluate()` in `train_ocelot.py` prints the loss for every validation bin
+(`val bin <bin_name> loss <loss>`), not just the epoch-averaged val loss.
+
+Pass `--save_val_outputs` to also dump each validation bin's raw tensors to
+`<checkpoint_dir>/val_outputs/epoch_<N>/<bin_name>.pt`:
+
+```python
+import torch
+d = torch.load("ocelot_checkpoints/val_outputs/epoch_0/day_half=2022-02-05_00.pt")
+d.keys()  # bin_name, loss, y_hat, y_target, y_target_valid_mask
+```
+
+`y_hat`/`y_target` are in the same normalized space the loss is computed in --
+the analysis increment (`anal_norm - ges_norm`) by default, or the full
+normalized analysis if `--target_is_anal` was passed at training time. They
+are **not** denormalized to physical units (K, Pa, m/s); doing that requires
+applying the `FEATURE_STATS['ges']` mean/std from
+`ocelot_vendor/obs_config_urma.py` on top, which this flag does not do.

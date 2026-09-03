@@ -75,6 +75,8 @@ def parse_args():
     p.add_argument("--num_workers", type=int, default=0)
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     p.add_argument("--checkpoint_dir", default="./ocelot_checkpoints")
+    p.add_argument("--save_val_outputs", action="store_true",
+                    help="Dump y_hat/y_target/valid_mask per val bin to <checkpoint_dir>/val_outputs/epoch_<N>/.")
     p.add_argument("--log_every", type=int, default=20)
     p.add_argument("--seed", type=int, default=0)
     return p.parse_args()
@@ -118,9 +120,14 @@ def build_dataset(args, start_date, end_date):
 
 
 @torch.no_grad()
-def evaluate(model, val_loader, device):
+def evaluate(model, val_loader, device, save_dir=None):
+    """Runs validation, printing per-bin loss. If save_dir is set, also dumps
+    y_hat/y_target/valid_mask (normalized, same space as the loss) per bin to
+    "<save_dir>/<bin_name>.pt" for later inspection."""
     model.eval()
     total_loss, n_batches = 0.0, 0
+    if save_dir is not None:
+        os.makedirs(save_dir, exist_ok=True)
     for task in val_loader:
         if task is None:
             continue
@@ -129,6 +136,19 @@ def evaluate(model, val_loader, device):
         loss = masked_mse_loss(y_hat, task["y_target"], task["y_target_valid_mask"])
         total_loss += loss.item()
         n_batches += 1
+        bin_name = task.get("bin_name")
+        print(f"  val bin {bin_name} loss {loss.item():.6f}")
+        if save_dir is not None:
+            torch.save(
+                {
+                    "bin_name": bin_name,
+                    "loss": loss.item(),
+                    "y_hat": y_hat.detach().cpu(),
+                    "y_target": task["y_target"].detach().cpu(),
+                    "y_target_valid_mask": task["y_target_valid_mask"].detach().cpu(),
+                },
+                os.path.join(save_dir, f"{bin_name}.pt"),
+            )
     model.train()
     return total_loss / max(n_batches, 1)
 
@@ -208,7 +228,11 @@ def main():
         avg_loss = running_loss / max(i + 1, 1)
         msg = f"epoch {epoch} done in {time.time() - epoch_start:.1f}s, avg train loss {avg_loss:.6f}"
         if val_loader is not None:
-            val_loss = evaluate(model, val_loader, device)
+            val_save_dir = (
+                os.path.join(args.checkpoint_dir, "val_outputs", f"epoch_{epoch}")
+                if args.save_val_outputs else None
+            )
+            val_loss = evaluate(model, val_loader, device, save_dir=val_save_dir)
             msg += f", val loss {val_loss:.6f}"
         print(msg)
 
