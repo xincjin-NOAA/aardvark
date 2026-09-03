@@ -14,6 +14,13 @@ byte-for-byte identical:
     dask-based version) -- dropping them removes two dependencies this
     adapter doesn't otherwise need.
   - `from ocelot.x import y` -> `from ocelot_vendor.x import y`.
+  - `ParquetDataManager.get_data_for_bin` simplified: dropped the NWP-cycle-window
+    search (`_NWP_CYCLES`/`_cycles_for_hour`) and the flat `<file_base>.parquet/
+    day_half=...` fallback layout. Aardvark's real URMA Parquet data is always
+    Hive-partitioned as `<file_base>_<year>.parquet/date=<YYYY-MM-DD>/cycle=<HH>`
+    with the bin's own hour as the literal cycle string; the flat fallback never
+    matches anything on disk and the multi-cycle window search could miss valid
+    partitions for bin hours outside the original 00/06/12/18 NWP cycle list.
 """
 from __future__ import annotations
 
@@ -527,8 +534,6 @@ class ParquetDataManager:
     This class lazily loads and processes data for a given time bin when first
     requested, then caches the result for subsequent requests.
     """
-    _NWP_CYCLES = [0, 6, 12, 18]
-
     def __init__(self, data_dir: str, observation_config, feature_stats, fill_values=None, delta_time: int = 12):
         self.data_dir = data_dir
         self.observation_config = observation_config
@@ -537,17 +542,6 @@ class ParquetDataManager:
         self.delta_time = delta_time
         self.processed_data_cache = OrderedDict()
         self.cache_size = 4
-
-    def _cycles_for_hour(self, hour_int: int) -> list:
-        """Return cycle strings covered by a bin starting at hour_int.
-
-        For 1h bins the hour itself is the cycle; for 6h/12h bins cycles are
-        the NWP model run times (00, 06, 12, 18) that fall within the bin window.
-        """
-        if self.delta_time == 1:
-            return [f"{hour_int:02d}"]
-        cycles = [c for c in self._NWP_CYCLES if hour_int <= c < hour_int + self.delta_time]
-        return [f"{c:02d}" for c in cycles]
 
     def get_data_for_bin(self, bin_name: str):
         """
@@ -565,59 +559,31 @@ class ParquetDataManager:
             data_summary_bin[obs_type] = {}
             for inst_name in self.observation_config[obs_type].keys():
                 file_base = self.observation_config[obs_type][inst_name].get('zarr_name', inst_name)
-                # Extract date and hour from bin_name (format: day_half=YYYY-MM-DD_HH)
+                # Extract date and cycle from bin_name (format: day_half=YYYY-MM-DD_HH).
+                # Real data is Hive-partitioned as <file_base>_<year>.parquet/date=<YYYY-MM-DD>/cycle=<HH>,
+                # with the bin's own hour as the literal cycle string -- there is no separate
+                # flat "<file_base>.parquet/day_half=..." layout on disk.
                 bin_parts = bin_name.split('=')[1]  # Get YYYY-MM-DD_HH
-                date_part = bin_parts.rsplit('_', 1)[0]  # Get YYYY-MM-DD
-                hour = bin_parts.rsplit('_', 1)[1]  # Get HH
+                date_part, cycle = bin_parts.rsplit('_', 1)  # Get YYYY-MM-DD, HH
                 year = date_part.split('-')[0]
 
-                # Determine which NWP cycles to read based on the bin hour and delta_time.
-                cycles = self._cycles_for_hour(int(hour))
-                logger.debug(f'hour: {hour}, cycles: {cycles}, date: {date_part}, year: {year},bin_name: {bin_name}')
-                # Try reading from new two-level partition structure
-                dfs = []
-                new_structure_found = False
-                for cycle in cycles:
-                    dataset_path = os.path.join(
-                        self.data_dir,
-                        f'{file_base}_{year}.parquet',
-                        f'date={date_part}',
-                        f'cycle={cycle}'
-                    )
-                    logger.debug(dataset_path)
-                    try:
-                        df_cycle = pd.read_parquet(dataset_path)
-                        # Replace fill values with NaN
-                        if self.fill_values:
-                            df_cycle = df_cycle.replace(self.fill_values, np.nan)
-                        dfs.append(df_cycle)
-                        new_structure_found = True
-                    except Exception as e:
-                        logger.debug(f"Info: Could not load from new structure {dataset_path}. Error: {e}")
-                        continue
-
-                # If new structure not found, fall back to old single-partition structure
-                if not new_structure_found:
-                    dataset_path = os.path.join(self.data_dir, file_base + '.parquet', bin_name)
-                    logger.debug(f"Trying old structure: {dataset_path}")
-                    try:
-                        df = pd.read_parquet(dataset_path)
-                        # Replace fill values with NaN
-                        if self.fill_values:
-                            df = df.replace(self.fill_values, np.nan)
-                        dfs = [df]
-                    except Exception as e:
-                        logger.warning(f"Could not load Parquet data from {dataset_path} for bin {bin_name}. Error: {e}")
-                        continue
-
-                if not dfs:
-                    logger.warning(f"No data loaded for {inst_name} in bin {bin_name}")
+                dataset_path = os.path.join(
+                    self.data_dir,
+                    f'{file_base}_{year}.parquet',
+                    f'date={date_part}',
+                    f'cycle={cycle}'
+                )
+                logger.debug(f'date: {date_part}, cycle: {cycle}, year: {year}, bin_name: {bin_name}, path: {dataset_path}')
+                try:
+                    df = pd.read_parquet(dataset_path)
+                    # Replace fill values with NaN
+                    if self.fill_values:
+                        df = df.replace(self.fill_values, np.nan)
+                except Exception as e:
+                    logger.warning(f"Could not load Parquet data from {dataset_path} for bin {bin_name}. Error: {e}")
                     continue
 
                 try:
-                    # Combine data from all partitions (or single partition for old structure)
-                    df = pd.concat(dfs, ignore_index=True)
-
                     if inst_name == 'raw_surface_obs':
                         df_clean = df.dropna(subset=["latitude", "longitude", "airTemperature"])
                     else:
