@@ -123,7 +123,7 @@ flowchart TB
     LOADER -->|reads| SAMPLE
     TM -->|instantiates| LF
     TM -->|instantiates| MODEL
-    TM -->|instantiates, passing\nmodel + loaders + loss| DDP
+    TM -->|instantiates, passing model + loaders + loss| DDP
 
     MODEL --- SC
     MODEL --- VIT
@@ -131,7 +131,7 @@ flowchart TB
 
     DDP -->|DataLoader batches| LOADER
     DDP -->|forward pass| MODEL
-    DDP -->|computes loss on\nmodel output vs ERA5| LF
+    DDP -->|computes loss on model output vs ERA5| LF
     DDP -->|checkpoints| OUT["ENCODER_PATH/\n(model weights, config.pkl)"]
 ```
 
@@ -262,8 +262,8 @@ sequenceDiagram
         deactivate Tr
         Tr->>Disk: save losses_*.npy, rmse_*.npy
 
-        alt epoch_loss < best_loss
-            Tr->>Disk: torch.save(model/optimizer state) as epoch_{n}
+        alt epoch_loss improved (lower than best_loss)
+            Tr->>Disk: torch.save(model/optimizer state) as epoch_N
             Tr->>Disk: save preds_train.npy, y_target_train.npy
         end
     end
@@ -287,7 +287,7 @@ The classes behind the assimilation path, with inheritance
 ```mermaid
 classDiagram
     class Dataset {
-        <<torch.utils.data>>
+        <<external>>
     }
     class WeatherDataset {
         +device
@@ -320,11 +320,11 @@ classDiagram
     WeatherDataset <|-- WeatherDatasetAssimilation
 
     class nnModule {
-        <<torch.nn>>
+        <<external>>
     }
     class convDeepSet {
         +init_ls : Parameter
-        +mode : "OffToOn"|"OnToOn"|"OnToOff"
+        +mode : OffToOn, OnToOn, or OnToOff
         +density_channel
         +compute_weights(x1, x2)
         +pw_dists2(a, b)
@@ -346,8 +346,8 @@ classDiagram
     class ConvCNPWeather {
         +in_channels
         +out_channels
-        +mode : "assimilation"|"forecast"
-        +decoder : "vit"|"vit_assimilation"
+        +mode : assimilation or forecast
+        +decoder : vit or vit_assimilation
         +decoder_lr : ViT
         +mlp : MLP
         +ascat_setconvs : convDeepSet
@@ -394,11 +394,11 @@ classDiagram
     nnModule <|-- WeightedRmseLoss
 
     class DDPTrainer {
-        +model : DDP~ConvCNPWeather~
+        +model : DistributedDataParallel-wrapped ConvCNPWeather
         +train_loader
         +val_loader
         +loss_function
-        +opt : AdamW|Adam
+        +opt : AdamW or Adam
         +best_loss
         +train(n_epochs)
         +eval_epoch(fix_sigma, epoch)
