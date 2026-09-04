@@ -225,7 +225,7 @@ sequenceDiagram
     participant DL as DataLoader (WeatherDatasetAssimilation)
     participant M as ConvCNPWeather (set-convs + ViT)
     participant LF as WeightedRmseLoss
-    participant Opt as AdamW/Adam optimizer
+    participant Optim as AdamW/Adam optimizer
     participant Disk as Disk (checkpoints, .npy logs)
 
     Sh->>TM: launch (CLI args)
@@ -246,7 +246,7 @@ sequenceDiagram
             Tr->>LF: loss_function(y_target, out)
             LF-->>Tr: loss
             Tr->>M: loss.backward()
-            Tr->>Opt: opt.step(), opt.zero_grad()
+            Tr->>Optim: optimizer.step(), optimizer.zero_grad()
         end
 
         Tr->>Tr: eval_epoch(epoch)
