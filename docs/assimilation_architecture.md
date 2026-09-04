@@ -175,7 +175,7 @@ flowchart LR
 
     R1 & R2 & R3 & R4 & R5 & R6 & R7 --> GI["WeatherDatasetAssimilation.get_index()\n__getitem__()"]
     R9 -->|norm_data / norm_era5| GI
-    R8 -->|load_era5_time()| YT["y_target\n(normalized ERA5 state)"]
+    R8 -->|load_era5_time| YT["y_target\n(normalized ERA5 state)"]
 
     GI --> TASK["task dict:\nx_context_*, y_context_*,\nelev, climatology, aux_time"]
     YT --> TASK
@@ -237,7 +237,7 @@ sequenceDiagram
     Tr->>Tr: eval_epoch(epoch=0)  # baseline val loss
 
     loop for each epoch
-        Tr->>Tr: sampler.set_epoch(epoch); model.train()
+        Tr->>Tr: sampler.set_epoch(epoch), model.train()
         loop for each batch (tqdm over train_loader)
             Tr->>DL: next(train_loader)
             DL-->>Tr: task dict (obs + y_target)
@@ -246,7 +246,7 @@ sequenceDiagram
             Tr->>LF: loss_function(y_target, out)
             LF-->>Tr: loss
             Tr->>M: loss.backward()
-            Tr->>Opt: opt.step(); opt.zero_grad()
+            Tr->>Opt: opt.step(), opt.zero_grad()
         end
 
         Tr->>Tr: eval_epoch(epoch)
