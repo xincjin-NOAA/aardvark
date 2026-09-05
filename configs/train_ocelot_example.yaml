@@ -1,0 +1,25 @@
+# Example experiment config for submit_train_ocelot.sh.
+#
+#   ./submit_train_ocelot.sh configs/train_ocelot_example.yaml
+#
+# Keys map directly onto train_ocelot.sh's config vars (case-insensitive --
+# the submit script upper-cases them), which in turn map onto train_ocelot.py's
+# --flags of the same name lower-cased. Omit any key to fall back to
+# train_ocelot.sh's own default for that var. `run_name` is required.
+#
+# CLI overrides still win over this file, e.g.:
+#   ./submit_train_ocelot.sh configs/train_ocelot_example.yaml EPOCHS=1
+
+run_name: lr3e-4_depth6
+
+data_path: /scratch3/NCEPDEV/stmp/Xin.C.Jin/data/ocelot/data_v6/urma_ok/
+static_data_dir: /scratch3/NCEPDEV/da/Xin.C.Jin/my_data/urma_ok
+start_date: "2022-02-01"
+end_date: "2022-05-03"
+val_start_date: "2022-05-04"
+val_end_date: "2022-05-10"
+
+epochs: 5
+grad_accum_steps: 8
+target_sample_size: 20000
+checkpoint_dir: ./checkpoints

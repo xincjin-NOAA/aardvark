@@ -75,6 +75,10 @@ def parse_args():
     p.add_argument("--num_workers", type=int, default=0)
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     p.add_argument("--checkpoint_dir", default="./ocelot_checkpoints")
+    p.add_argument("--run_name", default=None,
+                    help="Optional experiment name to distinguish runs; if set, checkpoints, the loss "
+                         "log, and val_outputs all go under <checkpoint_dir>/<run_name>/ instead of "
+                         "<checkpoint_dir>/ directly.")
     p.add_argument("--save_val_outputs", dest="save_val_outputs", action="store_true", default=True,
                     help="Dump y_hat/y_target/valid_mask per val bin to <checkpoint_dir>/val_outputs/epoch_<N>/. "
                          "On by default; pass --no_save_val_outputs to disable.")
@@ -122,9 +126,10 @@ def build_dataset(args, start_date, end_date):
 
 
 @torch.no_grad()
-def evaluate(model, val_loader, device, save_dir=None):
+def evaluate(model, val_loader, device, save_dir=None, log_file=None, epoch=None):
     """Runs validation, printing per-bin loss. If save_dir is set, also dumps
-    y_hat/y_target/valid_mask (normalized, same space as the loss) per bin to
+    y_hat/y_target/valid_mask (normalized, same space as the loss) plus the
+    query points' lon/lat (in degrees) per bin to
     "<save_dir>/date=<YYYY-MM-DD>_cycle=<HH>.pt" (same date=/cycle= naming as
     the real Parquet partitions) for later inspection."""
     model.eval()
@@ -141,7 +146,14 @@ def evaluate(model, val_loader, device, save_dir=None):
         n_batches += 1
         bin_name = task.get("bin_name")
         print(f"  val bin {bin_name} loss {loss.item():.6f}")
+        if log_file is not None:
+            log_file.write(f"{epoch},,{bin_name},val_bin,{loss.item():.6f}\n")
+            log_file.flush()
         if save_dir is not None:
+            # task["x_target"] is (1,2,M) [lon, lat], scaled by /360 (see
+            # OcelotWeatherDataset._instrument_tensors/__getitem__) -- undo that
+            # for the dump so it's plain degrees.
+            x_target_deg = (task["x_target"] * 360.0).detach().cpu()
             torch.save(
                 {
                     "bin_name": bin_name,
@@ -149,6 +161,8 @@ def evaluate(model, val_loader, device, save_dir=None):
                     "y_hat": y_hat.detach().cpu(),
                     "y_target": task["y_target"].detach().cpu(),
                     "y_target_valid_mask": task["y_target_valid_mask"].detach().cpu(),
+                    "lon_deg": x_target_deg[:, 0],
+                    "lat_deg": x_target_deg[:, 1],
                 },
                 os.path.join(save_dir, f"{bin_name}.pt"),
             )
@@ -160,7 +174,10 @@ def main():
     args = parse_args()
     torch.manual_seed(args.seed)
     device = torch.device(args.device)
+    if args.run_name:
+        args.checkpoint_dir = os.path.join(args.checkpoint_dir, args.run_name)
     os.makedirs(args.checkpoint_dir, exist_ok=True)
+    print(f"Run: {args.run_name or '(unnamed)'}, checkpoint_dir: {args.checkpoint_dir}")
 
     train_dataset = build_dataset(args, args.start_date, args.end_date)
     val_dataset = None
@@ -206,6 +223,11 @@ def main():
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
+    log_path = os.path.join(args.checkpoint_dir, "loss_log.csv")
+    log_file = open(log_path, "w")
+    log_file.write("epoch,step,bin_name,split,loss\n")
+    print(f"Logging loss to {log_path}")
+
     step = 0
     for epoch in range(args.epochs):
         epoch_start = time.time()
@@ -227,16 +249,21 @@ def main():
 
             if step % args.log_every == 0:
                 print(f"epoch {epoch} step {step} bin {task.get('bin_name')} loss {loss.item():.6f}")
+                log_file.write(f"{epoch},{step},{task.get('bin_name')},train_step,{loss.item():.6f}\n")
+                log_file.flush()
 
         avg_loss = running_loss / max(i + 1, 1)
         msg = f"epoch {epoch} done in {time.time() - epoch_start:.1f}s, avg train loss {avg_loss:.6f}"
+        log_file.write(f"{epoch},{step},,train_epoch,{avg_loss:.6f}\n")
         if val_loader is not None:
             val_save_dir = (
                 os.path.join(args.checkpoint_dir, "val_outputs", f"epoch_{epoch}")
                 if args.save_val_outputs else None
             )
-            val_loss = evaluate(model, val_loader, device, save_dir=val_save_dir)
+            val_loss = evaluate(model, val_loader, device, save_dir=val_save_dir, log_file=log_file, epoch=epoch)
             msg += f", val loss {val_loss:.6f}"
+            log_file.write(f"{epoch},,,val_epoch,{val_loss:.6f}\n")
+        log_file.flush()
         print(msg)
 
         ckpt_path = os.path.join(args.checkpoint_dir, f"epoch_{epoch}.pt")
@@ -245,6 +272,8 @@ def main():
             ckpt_path,
         )
         print(f"Saved checkpoint to {ckpt_path}")
+
+    log_file.close()
 
 
 if __name__ == "__main__":

@@ -58,10 +58,20 @@ EPOCHS="${EPOCHS:-5}"
 GRAD_ACCUM_STEPS="${GRAD_ACCUM_STEPS:-8}"
 TARGET_SAMPLE_SIZE="${TARGET_SAMPLE_SIZE:-20000}"
 CHECKPOINT_DIR="${CHECKPOINT_DIR:-./checkpoints}"
+RUN_NAME="${RUN_NAME:-}"      # distinguishes experiments -- see train_ocelot.py --run_name;
+                              # nests this run's checkpoints/val_outputs/loss_log.csv under
+                              # $CHECKPOINT_DIR/$RUN_NAME/ instead of $CHECKPOINT_DIR/ directly.
+                              # Prefer submitting via submit_train_ocelot.sh, which sets this
+                              # and namespaces the SLURM -o/-e logs to match.
 
 VAL_ARGS=()
 if [ -n "$VAL_START_DATE" ] && [ -n "$VAL_END_DATE" ]; then
     VAL_ARGS=(--val_start_date "$VAL_START_DATE" --val_end_date "$VAL_END_DATE")
+fi
+
+RUN_NAME_ARGS=()
+if [ -n "$RUN_NAME" ]; then
+    RUN_NAME_ARGS=(--run_name "$RUN_NAME")
 fi
 
 CMD=(python train_ocelot.py
@@ -75,6 +85,7 @@ CMD=(python train_ocelot.py
     --checkpoint_dir "$CHECKPOINT_DIR"
     --device cuda
     "${VAL_ARGS[@]}"
+    "${RUN_NAME_ARGS[@]}"
 )
 
 echo "=========================================="
